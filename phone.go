@@ -1,28 +1,19 @@
-package main
+package m2phone
 
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"strconv"
 )
 
 var (
-	buf []byte
-	err error
+	std              *PhoneRecord
+	buf              []byte
+	errInvailidPhone = errors.New("invalid phone format")
 )
-
-func init() {
-	buf, err = ioutil.ReadFile("./phone.dat")
-	check(err)
-}
-
-func check(e error) {
-	if e != nil {
-		panic(e)
-	}
-}
 
 type PhoneRecord struct {
 	Phone     string
@@ -31,6 +22,23 @@ type PhoneRecord struct {
 	Zipcode   string
 	Areacode  string
 	Phonetype byte
+}
+
+func Init(dataFile string) (err error) {
+	if std != nil {
+		return
+	}
+	std, err = NewLocator(dataFile)
+	return
+}
+
+func NewLocator(dataFile string) (loc *PhoneRecord, err error) {
+	buf, err = ioutil.ReadFile(dataFile)
+	if err != nil {
+		return
+	}
+	loc = new(PhoneRecord)
+	return
 }
 
 func (p *PhoneRecord) Humanphonetype() string {
@@ -70,18 +78,25 @@ func (p *PhoneRecord) Humanphoneinfo() {
 	fmt.Println("卡类型:", p.Humanphonetype())
 }
 
-func (p *PhoneRecord) Find() {
+func Find(phonestr string) (*PhoneRecord, error) {
+	return std.Find(phonestr)
+}
 
-	phone, err := strconv.Atoi(p.Phone[0:7])
-	check(err)
-	// version := string(buf[0:4])
+func (p *PhoneRecord) Find(phonestr string) (*PhoneRecord, error) {
+	if len(phonestr) < 7 {
+		err := errInvailidPhone
+		return p, err
+	}
+
+	phone, err := strconv.Atoi(phonestr[0:7])
+	//	version := string(buf[0:4])
 	first_index_offset := int(binary.LittleEndian.Uint32(buf[4:8]))
 
-	// fmt.Println("version:", version, "first_index_offset", first_index_offset)
+	//	fmt.Println("version:", version, "first_index_offset", first_index_offset)
 
 	recode_length := 9
 	phone_record_count := (len(buf) - first_index_offset) / recode_length
-	// fmt.Println("记录条数:", phone_record_count)
+	//	fmt.Println("记录条数:", phone_record_count)
 	left := 0
 	right := phone_record_count
 	var middle, cur_offset, cur_phone int
@@ -89,8 +104,9 @@ func (p *PhoneRecord) Find() {
 		middle = (left + right) / 2
 		cur_offset = first_index_offset + middle*recode_length
 		if cur_offset > len(buf) {
-			return
+			return p, err
 		}
+		//		fmt.Println("right", right, "left", left)
 		cur_phone = int(binary.LittleEndian.Uint32(buf[cur_offset : cur_offset+4]))
 		if cur_phone > phone {
 			right = middle - 1
@@ -102,17 +118,9 @@ func (p *PhoneRecord) Find() {
 			end_offset := record_offset + bytes.Index(buf[record_offset:], m)
 			p.Phonetype = buf[cur_offset+8]
 			p.Formatresult(buf[record_offset:end_offset])
-			return
+			break
 		}
 
 	}
-}
-
-func main() {
-	p := PhoneRecord{}
-	for i := 1329900; i < 1529999; i++ {
-		p.Phone = strconv.Itoa(i)
-		p.Find()
-		p.Humanphoneinfo()
-	}
+	return p, err
 }
